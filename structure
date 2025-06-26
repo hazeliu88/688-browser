@@ -1,0 +1,20 @@
+puppeteer-bit-integration/
+├── src/
+│   ├── bit-browser/             # 比特浏览器管理模块
+│   │   ├── manager.js           # 浏览器实例管理
+│   │   ├── api-client.js        # API客户端
+│   │   └── fingerprint.js       # 指纹配置工具
+│   ├── puppeteer-enhancer/      # Puppeteer增强模块
+│   │   ├── connector.js         # 浏览器连接器
+│   │   ├── behavior-simulator.js # 行为模拟器
+│   │   └── anti-detect.js       # 反检测工具
+│   ├── utils/
+│   │   ├── logger.js            # 日志系统
+│   │   └── config.js           # 配置文件
+│   └── main.js                  # 主入口文件
+├── tests/
+│   ├── integration.test.js      # 集成测试
+│   ├── cloudflare.test.js       # Cloudflare测试
+│   └── captcha.test.js          # 验证码测试
+├── .env                         # 环境变量
+└── package.json                 # 项目依赖
