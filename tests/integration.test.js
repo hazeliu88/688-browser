@@ -1,68 +1,100 @@
 const { expect } = require('chai');
-const EnhancedBrowserManager = require('../src/main');
-const { browser, puppeteer } = require('../src/utils/logger');
+const { puppeteer: logPuppeteer } = require('../src/utils/logger');
+const EnhancedBrowser = require('../src/main');
 
-describe('Bit Browser and Puppeteer Integration', function() {
-    this.timeout(300000); // 5分钟超时
-    
-    let browserManager;
-    
-    before(async () => {
-        browserManager = new EnhancedBrowserManager();
-        await browserManager.launch();
+// 共享浏览器实例状态
+let browserInstance = null;
+let isBrowserLaunched = false;
+
+describe('Bit Browser Integration', function() {
+    this.timeout(600000); // 10分钟超时
+
+    before(async function() {
+        if (!browserInstance) {
+            browserInstance = new EnhancedBrowser();
+        }
+        
+        if (!isBrowserLaunched) {
+            await browserInstance.launch();
+            isBrowserLaunched = true;
+        }
     });
-    
-    after(async () => {
-        await browserManager.cleanup();
+
+    after(async function() {
+        if (isBrowserLaunched) {
+            // 等待15秒以便查看页面
+            await new Promise(resolve => setTimeout(resolve, 15000));
+            await browserInstance.cleanup();
+            isBrowserLaunched = false;
+        }
     });
-    
-    it('should bypass Cloudflare protection', async () => {
-        puppeteer('Testing Cloudflare bypass');
-        const page = await browserManager.navigateTo('https://nowsecure.nl');
+
+    it('should bypass bot detection', async function() {
+        logPuppeteer('Testing bot detection bypass');
+        const page = await browserInstance.navigate('https://bot.sannysoft.com');
+        
+        // 等待检测页面完全加载
+        await page.waitForFunction(() => {
+            // 检查测试表格是否存在
+            const table = document.querySelector('table');
+            return table && table.rows.length > 10;
+        }, { timeout: 30000 });
+        
+        // 获取检测结果
+        const results = await page.evaluate(() => {
+            const table = document.querySelector('table');
+            const results = {};
+            
+            if (table) {
+                for (let i = 0; i < table.rows.length; i++) {
+                    const row = table.rows[i];
+                    if (row.cells.length >= 2) {
+                        const testName = row.cells[0].textContent.trim();
+                        const result = row.cells[1].textContent.trim();
+                        results[testName] = result;
+                    }
+                }
+            }
+            
+            return results;
+        });
+        
+        // 打印所有结果用于调试
+        console.log('Bot detection results:', JSON.stringify(results, null, 2));
+        
+        // 检查关键指标
+        expect(results['WebDriver (New)']).to.equal('absent (passed)');
+        expect(results['Plugins is of type PluginArray']).to.equal('present (passed)');
+        expect(results['Chrome (New)']).to.equal('present (passed)');
+    });
+
+    it('should bypass Cloudflare protection', async function() {
+        logPuppeteer('Testing Cloudflare bypass');
+        const page = await browserInstance.navigate('https://nowsecure.nl');
+        
+        // 等待页面完全加载
+        await page.waitForFunction(() => document.readyState === 'complete', { timeout: 30000 });
         
         // 检查是否通过Cloudflare验证
         const content = await page.content();
         expect(content).to.not.contain('Checking if the site connection is secure');
         expect(content).to.not.contain('Cloudflare');
     });
-    
-    it('should simulate human behavior', async () => {
-        puppeteer('Testing human behavior simulation');
-        const page = await browserManager.navigateTo('https://example.com');
+
+    it('should simulate human-like behavior', async function() {
+        logPuppeteer('Testing human-like behavior simulation');
+        
+        // 导航到示例页面
+        const page = await browserInstance.navigate('https://example.com');
+        await page.waitForFunction(() => document.readyState === 'complete', { timeout: 30000 });
+        
+        // 模拟鼠标移动
+        await browserInstance.behavior.simulateMouseMovement('body');
         
         // 模拟点击
-        await browserManager.behavior.simulateHumanClick('a', {
-            moveDelay: 500,
-            clickDelay: 200
-        });
-        
-        // 模拟输入
-        await browserManager.behavior.simulateHumanType('input[type="text"]', 'Human-like typing', {
-            delay: 120
-        });
+        await browserInstance.behavior.simulateHumanClick('a');
         
         // 模拟滚动
-        await browserManager.behavior.simulateHumanScroll();
-    });
-    
-    it('should bypass bot detection', async () => {
-        puppeteer('Testing bot detection bypass');
-        const page = await browserManager.navigateTo('https://bot.sannysoft.com');
-        
-        // 获取检测结果
-        const results = await page.evaluate(() => {
-            const tests = Array.from(document.querySelectorAll('table tr'));
-            return tests.reduce((acc, row) => {
-                const testName = row.querySelector('th').textContent.trim();
-                const result = row.querySelector('td').textContent.trim();
-                acc[testName] = result;
-                return acc;
-            }, {});
-        });
-        
-        // 验证关键检测点
-        expect(results['Webdriver']).to.equal('absent (passed)');
-        expect(results['Chrome']).to.equal('present (passed)');
-        expect(results['Permissions API']).to.equal('present (passed)');
+        await browserInstance.behavior.simulateScroll();
     });
 });

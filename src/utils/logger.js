@@ -21,7 +21,6 @@ const logger = createLogger({
     ]
 });
 
-// 导出日志方法
 module.exports = {
     browser: (message) => logger.log({ level: 'info', message, service: 'Browser' }),
     puppeteer: (message) => logger.log({ level: 'info', message, service: 'Puppeteer' }),

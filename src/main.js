@@ -1,49 +1,44 @@
-const { browser, puppeteer, debug, error } = require('./utils/logger');
+const { browser: logBrowser, puppeteer: logPuppeteer, debug, error } = require('./utils/logger');
 const BitBrowserManager = require('./bit-browser/manager');
-const FingerprintGenerator = require('./bit-browser/fingerprint');
-const PuppeteerConnector = require('./puppeteer-enhancer/connector');
+const BrowserConnector = require('./puppeteer-enhancer/browser-connector');
 const BehaviorSimulator = require('./puppeteer-enhancer/behavior-simulator');
-const AntiDetect = require('./puppeteer-enhancer/anti-detect');
-const Config = require('./utils/config');
 
-class EnhancedBrowserManager {
+class EnhancedBrowser {
     constructor() {
         this.bitManager = new BitBrowserManager();
         this.browserId = null;
         this.debugInfo = null;
-        this.page = null;
         this.browser = null;
+        this.page = null;
         this.behavior = null;
+        this.isLaunched = false;
     }
 
     async launch() {
+        if (this.isLaunched) return this;
+        
         try {
-            debug('Starting browser launch sequence');
+            debug('Launching enhanced browser');
             
-            // 1. 生成随机指纹
-            const fingerprint = FingerprintGenerator.generateRandom();
-            browser(`Generated fingerprint: ${JSON.stringify(fingerprint)}`);
-            
-            // 2. 创建比特浏览器实例
+            // 创建比特浏览器实例
+            const fingerprint = require('./bit-browser/fingerprint').generateRandom();
             this.browserId = await this.bitManager.createBrowser(fingerprint);
-            browser(`Browser created with ID: ${this.browserId}`);
+            logBrowser(`Created Bit browser: ${this.browserId}`);
             
-            // 3. 打开比特浏览器
+            // 打开浏览器
             this.debugInfo = await this.bitManager.openBrowser(this.browserId);
-            browser(`Browser opened at: http://${this.debugInfo.http}`);
+            logBrowser(`Opened browser at ${this.debugInfo.http}`);
             
-            // 4. 连接Puppeteer-Real-Browser
-            const { page, browser: puppeteerBrowser } = await PuppeteerConnector.connectToBitBrowser(this.debugInfo);
+            // 连接浏览器
+            const { browser: pptrBrowser, page } = await BrowserConnector.connectToBitBrowser(this.debugInfo);
+            this.browser = pptrBrowser;
             this.page = page;
-            this.browser = puppeteerBrowser;
             
-            // 5. 应用反检测措施
-            await AntiDetect.applyAntiDetect(this.page);
+            // 初始化行为模拟器
+            this.behavior = new BehaviorSimulator(page);
             
-            // 6. 初始化行为模拟器
-            this.behavior = new BehaviorSimulator(this.page);
-            
-            debug('Browser launch sequence completed');
+            this.isLaunched = true;
+            debug('Browser launched successfully');
             return this;
         } catch (err) {
             error(`Browser launch failed: ${err.message}`);
@@ -52,13 +47,28 @@ class EnhancedBrowserManager {
         }
     }
 
-    async navigateTo(url) {
-        puppeteer(`Navigating to: ${url}`);
+    async navigate(url) {
+        if (!this.isLaunched) {
+            await this.launch();
+        }
+        
+        logPuppeteer(`Navigating to ${url}`);
         try {
             await this.page.goto(url, { 
-                waitUntil: 'networkidle2',
-                timeout: Config.getBrowserTimeout() 
+                waitUntil: 'domcontentloaded',
+                timeout: 60000 
             });
+            
+            // 等待页面完全加载
+            await this.page.evaluate(() => {
+                return new Promise(resolve => {
+                    if (document.readyState === 'complete') resolve();
+                    document.addEventListener('readystatechange', () => {
+                        if (document.readyState === 'complete') resolve();
+                    });
+                });
+            });
+            
             return this.page;
         } catch (err) {
             error(`Navigation failed: ${err.message}`);
@@ -67,21 +77,35 @@ class EnhancedBrowserManager {
     }
 
     async cleanup() {
-        debug('Starting cleanup process');
+        if (!this.isLaunched) return;
+        
+        debug('Cleaning up resources');
         try {
             if (this.browser) {
-                puppeteer('Closing Puppeteer browser');
-                await this.browser.close();
+                await this.browser.close(); // 使用 close() 而不是 disconnect()
+                logPuppeteer('Puppeteer browser closed');
+                this.browser = null;
             }
             
             if (this.browserId) {
-                browser('Closing Bit Browser instance');
-                await this.bitManager.closeBrowser(this.browserId);
+                try {
+                    await this.bitManager.closeBrowser(this.browserId);
+                    logBrowser(`Closed Bit browser: ${this.browserId}`);
+                } catch (err) {
+                    logBrowser(`Close browser failed: ${err.message}`);
+                }
                 
-                browser('Deleting Bit Browser instance');
-                await this.bitManager.deleteBrowser(this.browserId);
+                try {
+                    await this.bitManager.deleteBrowser(this.browserId);
+                    logBrowser(`Deleted Bit browser: ${this.browserId}`);
+                } catch (err) {
+                    logBrowser(`Delete browser failed: ${err.message}`);
+                }
+                
+                this.browserId = null;
             }
             
+            this.isLaunched = false;
             debug('Cleanup completed');
         } catch (err) {
             error(`Cleanup failed: ${err.message}`);
@@ -89,4 +113,29 @@ class EnhancedBrowserManager {
     }
 }
 
-module.exports = EnhancedBrowserManager;
+// // 示例用法
+// (async () => {
+//     try {
+//         const enhancedBrowser = new EnhancedBrowser();
+//         await enhancedBrowser.launch();
+        
+//         // 导航到检测网站
+//         const page = await enhancedBrowser.navigate('https://bot.sannysoft.com');
+        
+//         // 等待15秒以便查看页面
+//         await new Promise(resolve => setTimeout(resolve, 15000));
+        
+//         // 截图保存
+//         await page.screenshot({ path: 'detection-test.png' });
+        
+//         // 导航到 Cloudflare 防护网站
+//         await enhancedBrowser.navigate('https://nowsecure.nl');
+        
+//         // 关闭浏览器
+//         await enhancedBrowser.cleanup();
+//     } catch (err) {
+//         console.error('Error:', err);
+//     }
+// })();
+
+module.exports = EnhancedBrowser;
